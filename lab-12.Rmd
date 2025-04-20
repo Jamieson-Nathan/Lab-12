@@ -1,7 +1,7 @@
 ---
 title: "Lab 12 - Smoking during pregnancy"
-author: "Insert your name here"
-date: "Insert date here"
+author: "Jamieson Nathan"
+date: "4/20/2025"
 output: github_document
 ---
 
@@ -9,19 +9,193 @@ output: github_document
 
 ```{r load-packages, message=FALSE}
 library(tidyverse) 
-library(tidymodels)
+library(infer)
 library(openintro)
+library(infer)
+```
+
+```{r setup, include=FALSE}
+set.seed(123)
+
+data(ncbirths)
+
 ```
 
 ### Exercise 1
 
-Remove this text, and add your answer for Exercise 1 here.
-Add code chunks as needed.
-Don't forget to label your code chunk.
-Do not use spaces in code chunk labels.
+```{r first-one}
+
+nrow(ncbirths)
+
+```
+There are 1000 cases in this dataset!
 
 ### Exercise 2
 
-...
+```{r first-two}
 
-Add exercise headings as needed.
+ncbirths_white <- subset(ncbirths, whitemom == "white")
+
+mean_weight <- mean(ncbirths_white$weight, na.rm = TRUE)
+mean_weight
+
+boot_df <- ncbirths_white %>%
+  specify(response = weight) %>% 
+  generate(reps = 15000, type = "bootstrap") %>% 
+  calculate(stat = "mean")
+
+ggplot(data = boot_df, mapping = aes(x = stat)) +
+  geom_histogram(bins = 30, fill = "lightblue", color = "white") +
+  labs(title = "Bootstrap distribution of means")
+
+null_dist <- boot_df %>%
+  mutate(stat = stat - mean(stat) + 7.43)
+
+obs_stat <- mean(ncbirths_white$weight, na.rm = TRUE)
+
+p_value <- mean(abs(null_dist$stat - 7.43) >= abs(obs_stat - 7.43))
+p_value
+
+
+```
+
+Because the p-value indicates significance, we reject the null hypothesis. There is strong statistical evidence that the average birthweight of babies born to White mothers has changed since 1995.
+
+Specifically, the average appears to have decreased from 7.43 pounds to 7.25 pounds in this sample.
+
+### Exercise 2
+
+```{r third-one}
+
+ggplot(ncbirths, aes(x = habit, y = weight)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Birthweight by Mother's Smoking Habit",
+       x = "Smoking Habit",
+       y = "Baby's Birthweight (lbs)") +
+  theme_minimal()
+
+```
+
+```{r fourth-one}
+
+ncbirths_clean <- ncbirths %>%
+  filter(!is.na(habit) & !is.na(weight))
+
+ncbirths_clean %>%
+  group_by(habit) %>%
+  summarize(mean_weight = mean(weight))
+
+```
+
+
+```{r fifth-one}
+
+
+obs_diff <- ncbirths_clean %>%
+  specify(response = weight, explanatory = habit) %>%
+  calculate(stat = "diff in means", order = c("nonsmoker", "smoker"))
+
+null_dist <- ncbirths_clean %>%
+  specify(response = weight, explanatory = habit) %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 10000, type = "permute") %>%
+  calculate(stat = "diff in means", order = c("nonsmoker", "smoker"))
+
+p_val <- null_dist %>%
+  get_p_value(obs_stat = obs_diff$stat, direction = "two-sided")
+
+boot_dist <- ncbirths_clean %>%
+  specify(response = weight, explanatory = habit) %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in means", order = c("nonsmoker", "smoker"))
+
+ci <- boot_dist %>%
+  get_confidence_interval(level = 0.95, type = "percentile")
+
+ci_low <- ci$lower_ci
+ci_high <- ci$upper_ci
+
+```
+The observed difference in average birth weights between babies of nonsmoking and smoking mothers was **`r round(obs_diff, 2)` pounds**, with babies of smokers weighing less on average.
+
+A permutation test using 10,000 simulations yielded a **p-value of `r signif(p_val, 3)`**, indicating the difference is **statistically significant** at the 0.05 level.
+
+A 95% confidence interval for the difference in means ranged from **`r round(ci_low, 2)` to `r round(ci_high, 2)` pounds**, suggesting we can be 95% confident that babies of nonsmoking mothers weigh between that range more than babies of smokers.
+
+Therefore, maternal smoking is associated with a statistically and practically significant reduction in birth weight.
+
+### Exercise 3
+
+
+```{r sixth-one}
+
+table(ncbirths$mature)
+
+ncbirths %>%
+  group_by(mature) %>%
+  summarize(min_age = min(mage, na.rm = TRUE),
+            max_age = max(mage, na.rm = TRUE),
+            mean_age = mean(mage, na.rm = TRUE))
+
+
+```
+
+I determined the age cutoff for mature mothers by examining the relationship between the mature and mage variables. I grouped the data by the mature category and summarized the range of maternal ages in each group. The results show that mothers classified as "mature" are 35 years old or older, while "younger moms" are under 35
+
+For the following hypothesis testing:
+
+- p₁ = proportion of low birthweight babies among mature mothers
+
+- p₂ = proportion among younger mothers
+
+**H₀: p₁ = p₂ (no difference in proportions)**
+
+**Hₐ: p₁ > p₂ (mature mothers have a higher proportion of low birthweight babies)**
+
+```{r seventh-one}
+
+table(ncbirths$mature, ncbirths$lowbirthweight)
+
+```
+Since each group has more than 10 cases, we can proceed to hypothesis test. 
+
+```{r eigth-one}
+
+ncbirths_lowbw <- ncbirths %>%
+  filter(!is.na(mature) & !is.na(lowbirthweight)) %>%
+  mutate(lowbw_binary = ifelse(lowbirthweight == "low", "low", "not low"))
+
+obs_lowbw_diff <- ncbirths_lowbw %>%
+  specify(response = lowbw_binary, explanatory = mature, success = "low") %>%
+  calculate(stat = "diff in props", order = c("younger mom", "mature mom"))
+
+obs_lowbw_stat <- obs_lowbw_diff$stat
+
+null_lowbw_dist <- ncbirths_lowbw %>%
+  specify(response = lowbw_binary, explanatory = mature, success = "low") %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 10000, type = "permute") %>%
+  calculate(stat = "diff in props", order = c("younger mom", "mature mom"))
+
+lowbw_pval <- null_lowbw_dist %>%
+  get_p_value(obs_stat = obs_lowbw_stat, direction = "right")
+
+boot_lowbw_dist <- ncbirths_lowbw %>%
+  specify(response = lowbw_binary, explanatory = mature, success = "low") %>%
+  generate(reps = 10000, type = "bootstrap") %>%
+  calculate(stat = "diff in props", order = c("younger mom", "mature mom"))
+
+lowbw_ci <- boot_lowbw_dist %>%
+  get_confidence_interval(level = 0.95, type = "percentile")
+
+lowbw_ci_lower <- lowbw_ci$lower_ci
+lowbw_ci_upper <- lowbw_ci$upper_ci
+
+
+```
+
+The observed difference in proportions of low birthweight babies (mature – younger) was `r round(obs_lowbw_stat, 3)`.
+
+A permutation test using 10,000 simulations yielded a p-value of `r signif(lowbw_pval, 3)`, which is `r ifelse(lowbw_pval < 0.05, "statistically significant", "not statistically significant")` at the α = 0.05 level.
+
+A 95% confidence interval for the difference in proportions ranged from `r round(lowbw_ci_lower, 3)` to `r round(lowbw_ci_upper, 3)`. Since the interval `r ifelse((lowbw_ci_lower > 0 | lowbw_ci_upper < 0), "does not contain 0", "contains 0")`, this supports the conclusion that mature mothers are `r ifelse((lowbw_ci_lower > 0), "more likely", "not more likely")` to have low birthweight babies.
